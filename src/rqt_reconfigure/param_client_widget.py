@@ -56,6 +56,7 @@ from rqt_reconfigure.param_editors import (BooleanEditor,  # noqa: F401
                                            StringEditor)
 
 import yaml
+import array
 
 
 class ParamClientWidget(QWidget):
@@ -143,7 +144,7 @@ class ParamClientWidget(QWidget):
         return self._node_grn
 
     def _handle_param_event(
-        self, new_parameters, changed_parameters, deleted_parameters
+            self, new_parameters, changed_parameters, deleted_parameters
     ):
         # TODO: Think about replacing callback architecture with signals.
         if new_parameters:
@@ -180,7 +181,17 @@ class ParamClientWidget(QWidget):
                 parameters = self._param_client.get_parameters(
                     self._param_client.list_parameters()
                 )
-                yaml.dump({p.name: p.value for p in parameters}, f)
+
+                yaml_data = {
+                    self._node_grn: {
+                        "ros__parameters": {}
+                    }
+                }
+                for p in parameters:
+                    value = list(p.value) if isinstance(p.value, array.array) else p.value  # array型対策
+                    yaml_data[self._node_grn]["ros__parameters"][p.name] = value
+
+                yaml.dump(yaml_data, f, default_flow_style=False, sort_keys=False)
             except Exception as e:
                 logging.warn(
                     "Parameter saving wasn't successful because: " + str(e)
@@ -188,12 +199,11 @@ class ParamClientWidget(QWidget):
 
     def load_param(self, filename):
         with open(filename, 'r') as f:
-            parameters = [
-                rclpy.parameter.Parameter(name=name, value=value)
-                for doc in yaml.safe_load_all(f.read())
-                for name, value in doc.items()
-            ]
-
+            parameters = []
+            for doc in yaml.safe_load_all(f.read()):
+                for node_name in doc.keys():
+                    for name, value in doc[node_name]["ros__parameters"].items():
+                        parameters.append(rclpy.parameter.Parameter(name=name, value=value))
         try:
             self._param_client.set_parameters(parameters)
         except Exception as e:
