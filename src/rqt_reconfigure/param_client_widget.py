@@ -191,7 +191,7 @@ class ParamClientWidget(QWidget):
                     value = list(p.value) if isinstance(p.value, array.array) else p.value  # array型対策
                     yaml_data[self._node_grn]["ros__parameters"][p.name] = value
 
-                yaml.dump(yaml_data, f, default_flow_style=False, sort_keys=False)
+                yaml.dump(yaml_data, f, default_flow_style=None, sort_keys=False)
             except Exception as e:
                 logging.warn(
                     "Parameter saving wasn't successful because: " + str(e)
