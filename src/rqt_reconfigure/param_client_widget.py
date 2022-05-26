@@ -31,6 +31,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 # Author: Gonzalo de Pedro
+import os
 
 from python_qt_binding.QtCore import QMargins, QSize, Qt, Signal
 from python_qt_binding.QtGui import QFont, QIcon
@@ -176,41 +177,64 @@ class ParamClientWidget(QWidget):
             self.save_param(filename[0])
 
     def save_param(self, filename):
-        with open(filename, 'w') as f:
-            try:
-                parameters = self._param_client.get_parameters(
-                    self._param_client.list_parameters()
-                )
 
-                yaml_data = {
-                    self._node_grn: {
-                        "ros__parameters": {}
-                    }
+        # 既存のパラメータファイルの場合、存在する項目のみに絞る
+        target_names = [p.name for p in self.parse_yaml(filename)] if os.path.exists(filename) else []
+        print("target_names:", target_names)
+
+        try:
+            parameters = self._param_client.get_parameters(
+                self._param_client.list_parameters()
+            )
+
+            if len(target_names) > 0:
+                parameters = list(filter(lambda p: p.name in target_names, parameters))
+
+                if len(target_names) != len(parameters):
+                    logging.warn('Some parameters in the file are not found ros parameter.')
+                    return
+
+            yaml_data = {
+                self._node_grn: {
+                    "ros__parameters": {}
                 }
-                for p in parameters:
-                    value = list(p.value) if isinstance(p.value, array.array) else p.value  # array型対策
-                    yaml_data[self._node_grn]["ros__parameters"][p.name] = value
+            }
+            for p in parameters:
+                value = list(p.value) if isinstance(p.value, array.array) else p.value  # array型対策
+                yaml_data[self._node_grn]["ros__parameters"][p.name] = value
 
-                yaml.dump(yaml_data, f, default_flow_style=None, sort_keys=False)
-            except Exception as e:
-                logging.warn(
-                    "Parameter saving wasn't successful because: " + str(e)
-                )
+            # フロースタイルになってしまうのを防ぐためにダミーの配列を入れる(dump後削除する）
+            yaml_data[self._node_grn]["ros__parameters"]["_dummy_"] = []
+
+            yaml_str = yaml.dump(yaml_data, default_flow_style=None, sort_keys=False)
+            yaml_str = yaml_str.replace('_dummy_: []', '')
+            print("final", yaml_str)
+            with open(filename, 'w') as f:
+                f.write(yaml_str)
+
+        except Exception as e:
+            logging.warn(
+                "Parameter saving wasn't successful because: " + str(e)
+            )
 
     def load_param(self, filename):
-        with open(filename, 'r') as f:
-            parameters = []
-            for doc in yaml.safe_load_all(f.read()):
-                for node_name in doc.keys():
-                    for name, value in doc[node_name]["ros__parameters"].items():
-                        parameters.append(rclpy.parameter.Parameter(name=name, value=value))
         try:
+            parameters = self.parse_yaml(filename)
             self._param_client.set_parameters(parameters)
         except Exception as e:
             logging.warn(
                 "Parameter loading wasn't successful"
                 ' because: {}'.format(e)
             )
+
+    def parse_yaml(self, filename):
+        with open(filename, 'r') as f:
+            parameters = []
+            for doc in yaml.safe_load_all(f.read()):
+                for node_name in doc.keys():
+                    for name, value in doc[node_name]["ros__parameters"].items():
+                        parameters.append(rclpy.parameter.Parameter(name=name, value=value))
+        return parameters
 
     def collect_paramnames(self, config):
         pass
